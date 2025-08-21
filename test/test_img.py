@@ -11,6 +11,38 @@ import numpy as np
 import yaml
 from ultralytics import YOLO
 
+# Target resolution for uniform display
+TARGET_WIDTH = 1280
+TARGET_HEIGHT = 720
+
+
+def resize_image_to_hd(image):
+    """Resize image to HD resolution (1280x720) while maintaining aspect ratio"""
+    h, w = image.shape[:2]
+
+    # Calculate scaling factor
+    scale_w = TARGET_WIDTH / w
+    scale_h = TARGET_HEIGHT / h
+    scale = min(scale_w, scale_h)  # Use smaller scale to fit within bounds
+
+    # Calculate new dimensions
+    new_w = int(w * scale)
+    new_h = int(h * scale)
+
+    # Resize image
+    resized = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_AREA)
+
+    # Create canvas with target size and center the image
+    canvas = np.zeros((TARGET_HEIGHT, TARGET_WIDTH, 3), dtype=np.uint8)
+
+    # Calculate position to center the image
+    start_x = (TARGET_WIDTH - new_w) // 2
+    start_y = (TARGET_HEIGHT - new_h) // 2
+
+    canvas[start_y:start_y + new_h, start_x:start_x + new_w] = resized
+
+    return canvas
+
 
 def draw_label_with_bg(img, label, position=(10, 50), text_color=(255, 255, 255), bg_color=(0, 0, 0)):
     font = cv2.FONT_HERSHEY_SIMPLEX
@@ -45,6 +77,10 @@ def process_image(model, image_path, model_name, conf=0.25):
             smoke += 1
 
     annotated = results[0].plot()
+
+    # Resize to HD resolution
+    annotated = resize_image_to_hd(annotated)
+
     draw_label_with_bg(annotated, model_name)
 
     stats = {
@@ -65,12 +101,17 @@ def show_comparison(image_path, image_dict):
     if img1 is None or img2 is None:
         return
 
+    # Both images are already HD resolution (1280x720), so we can directly combine them
     combined = np.hstack((img1.copy(), img2.copy()))
+
+    # The combined image will be 2560x720, which might be too wide
+    # Let's resize it to fit better on screen
+    combined_resized = cv2.resize(combined, (1920, 540), interpolation=cv2.INTER_AREA)
 
     window_name = f"{Path(image_path).stem}: {model_names[0]} vs {model_names[1]}"
     cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(window_name, 1280, 720)
-    cv2.imshow(window_name, combined)
+    cv2.resizeWindow(window_name, 1920, 540)
+    cv2.imshow(window_name, combined_resized)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 
@@ -104,7 +145,7 @@ def save_stats_table(stats, model_sizes, output_dir):
 
         data["Model"].append(model)
         data["Size (MB)"].append(f"{model_sizes[model]:.2f}")
-        data["Avg Inference (ms)"].append(f"{np.mean(infs)*1000:.2f}")
+        data["Avg Inference (ms)"].append(f"{np.mean(infs) * 1000:.2f}")
         data["Total Fire"].append(str(fires))
         data["Total Smoke"].append(str(smokes))
         data["Fire/Img"].append(f"{fires / count:.2f}")
@@ -127,7 +168,7 @@ def save_stats_table(stats, model_sizes, output_dir):
 
 
 def main():
-    print("Starting Image Evaluation")
+    print("Starting Image Evaluation with HD Resolution (1280x720)")
 
     MODEL_PATHS = {
         "YOLOv12": "../yolov12/runs/YOLOv12/weights/best.pt",
@@ -152,6 +193,7 @@ def main():
         return
 
     print(f"Selected {len(image_paths)} images for inference")
+    print(f"Output resolution will be standardized to HD: {TARGET_WIDTH}x{TARGET_HEIGHT}")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     base_dir = os.path.join("../test/output/images", f"batch_{timestamp}")
@@ -194,6 +236,7 @@ def main():
     print(f"Results saved to: {base_dir}")
     print(f"Annotated images: {output_img_dir}")
     print(f"Statistics and tables: {base_dir}")
+    print(f"All output images standardized to HD resolution: {TARGET_WIDTH}x{TARGET_HEIGHT}")
 
 
 if __name__ == "__main__":
