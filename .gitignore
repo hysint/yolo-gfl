@@ -1,0 +1,6 @@
+dataset/HOME-FIRE/
+test/output
+test/runs
+venv/
+utils/figures
+.idea/

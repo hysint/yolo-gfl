@@ -1,0 +1,43 @@
+# YOLO GFL (GhostNet Fire Lightweight) Configuration
+# YOLOv12 Optimized using GhostNet-Based Architecture
+
+# Parameters
+nc: 2  # number of classes
+scales: # model compound scaling constants
+  # [depth, width, max_channels]
+  n: [0.50, 0.25, 1024] # summary: 198 layers, 1,616,270 parameters, 4.7 GFLOPs
+
+# YOLO GFLv2 backbone - Feature extraction with Ghost modules
+backbone:
+  # [from, repeats, module, args]
+  - [-1, 1, Conv,  [64, 3, 2]]     # 0-P1/2   - Initial conv, downsample 2x
+  - [-1, 1, Conv,  [128, 3, 2]]    # 1-P2/4   - Second conv, downsample 4x total
+  - [-1, 2, C3k2,  [128]]          # 2        - C3k2 blocks for feature extraction
+  - [-1, 1, Conv,  [256, 3, 2]]    # 3-P3/8   - Third conv, downsample 8x total  
+  - [-1, 3, C3k2,  [256]]          # 4        - More C3k2 blocks
+  - [-1, 1, Conv,  [512, 3, 2]]    # 5-P4/16  - Fourth conv, downsample 16x total
+  - [-1, 4, C3Ghost, [512]]        # 6        - Ghost convolutions for efficiency
+  - [-1, 1, Conv,  [1024, 3, 2]]   # 7-P5/32  - Final conv, downsample 32x total
+  - [-1, 2, C3Ghost, [1024]]       # 8        - Final Ghost blocks
+
+# YOLO GFLv2 neck + head - Multi-scale feature fusion and detection
+head:
+  # Neck - Feature Pyramid Network with Ghost modules
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 9   - Upsample P5->P4 scale
+  - [[-1, 5], 1, Concat, [1]]                   # 10  - Concat upsampled + P4 backbone
+  - [-1, 2, C3Ghost, [512]]                     # 11  - Ghost conv for P4 features
+  
+  - [-1, 1, nn.Upsample, [None, 2, "nearest"]]  # 12  - Upsample P4->P3 scale  
+  - [[-1, 3], 1, Concat, [1]]                   # 13  - Concat upsampled + P3 backbone
+  - [-1, 2, C3Ghost, [256, 3, 2]]               # 14  - Ghost conv for P3 features (output)
+  
+  # Head - Multi-scale detection outputs
+  - [-1, 1, GhostConv, [256, 3, 2]]             # 15  - Ghost downsample P3->P4
+  - [[-1, 11], 1, Concat,[1]]                   # 16  - Concat with P4 neck features  
+  - [-1, 2, C3Ghost, [512, 3, 2]]               # 17  - Ghost conv for P4 features (output)
+  
+  - [-1, 1, GhostConv, [512, 3, 2]]             # 18  - Ghost downsample P4->P5
+  - [[-1, 8], 1, Concat, [1]]                   # 19  - Concat with P5 backbone features
+  - [-1, 2, C3k2, [1024]]                       # 20  - Final conv for P5 features (output)
+  
+  - [[14, 17, 20], 1, Detect, [nc]]             # 21  - Multi-scale detection head (P3, P4, P5)
